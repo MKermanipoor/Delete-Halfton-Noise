@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 
 def cast_int(t):
-    return [int(i) for i in t]
+    return np.array([int(i) for i in t])
 
 
 def get_matrix(img1, img2):
@@ -32,10 +32,43 @@ def get_matrix(img1, img2):
     pts2 = np.float32(pts2)
 
     M, mask = cv2.findHomography(pts2, pts1, cv2.RANSAC, 4.0)
-    return M
+    return M, len(matches)
     # result = cv2.warpPerspective(img2, M, (512, 512))
     # plt.imshow(result)
     # plt.show()
+
+
+def get_sift_matrix(img1, img2):
+    sift = cv2.xfeatures2d.SIFT_create()
+
+    kp1, des1 = sift.detectAndCompute(img1, None)
+    kp2, des2 = sift.detectAndCompute(img2, None)
+
+    FLANN_INDEX_KDTREE = 1
+    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=40)
+    search_params = dict(checks=75)
+    bf = cv2.FlannBasedMatcher(index_params, search_params)
+    matches = bf.knnMatch(des1, des2, k=2)
+
+    pts1 = []
+    pts2 = []
+    goods = []
+    for m, n in matches:
+        if m.distance < 0.8 * n.distance:
+            goods.append(m)
+            pts1.append(cast_int(kp1[m.queryIdx].pt))
+            pts2.append(cast_int(kp2[m.trainIdx].pt))
+
+    # goods = sorted(goods, key=lambda x: x.distance)
+    # img3 = cv2.drawMatches(img1, kp1, img2, kp2, goods[:10], None, flags=2)
+    # plt.imshow(img3)
+    # plt.show()
+
+    pts1 = np.float32(pts1)
+    pts2 = np.float32(pts2)
+
+    M, mask = cv2.findHomography(pts2, pts1, cv2.RANSAC, 5.0)
+    return M, len(goods)
 
 
 s_ssim = 0
@@ -48,10 +81,11 @@ for i in range(1, 11):
         image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
         image2 = cv2.imread('data/Attack 1/' + str(i) + '_' + str(j) + '.bmp')
         image2 = cv2.cvtColor(image2, cv2.COLOR_BGR2RGB)
-        Matrix = get_matrix(image1, image2)
+        Matrix, match_size = get_sift_matrix(image1, image2)
 
         image3 = cv2.imread('data/Attack 2/' + str(i) + '_' + str(j) + '.bmp')
         image3 = cv2.warpPerspective(image3, Matrix, (512, 512))
+        # image3 = cv2.warpAffine(image3, Matrix, (512, 512))
 
         orginal = cv2.imread('data/Original/' + str(i) + '.bmp')
 
@@ -65,7 +99,7 @@ for i in range(1, 11):
         mp = len(sub[sub == 0])
         s_mp += mp
 
-        print(str(i) + '_' + str(j) + ' : ' + str(score) + ' ' + str(mse) + ' ' + str(mp))
+        print(str(i) + '_' + str(j) + ' : ' + str(score) + ' ' + str(mse) + ' ' + str(match_size))
 
         cv2.imwrite('data/Result/' + str(i) + '_' + str(j) + '.png', image3)
 
